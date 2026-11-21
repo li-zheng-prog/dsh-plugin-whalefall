@@ -6,6 +6,7 @@ An aurora and whale glassmorphism background theme for the DeepSeek Harness web 
 - Aurora, particle whale and star-grid effects animate with the interface.
 - On the home screen the particle whale breaks apart on the same blank-space click that starts the official home whale's dive animation: the silhouette swells and shatters into drifting particles within about 0.3 s and has faded out by about 0.6 s, so it never shares the frame with the official whale. The dust then flows back into a whale once the official animation has finished.
 - The sidebar, composer and some content panels use translucent glass: the left sidebar is a frosted-glass card, the right sidebar is clear glass.
+- The composer edge carries a blue flowing-light ring: at rest the stroke and the card's outer glow breathe together (5 s cycle, 55–100%, no travelling highlight), so it never reads as two separate segments; on hover the breathing flattens into a steady edge and one light spot slides along the border to the point nearest the pointer. The spot is anchored on the nearest edge, so it tracks left/right 1:1 along the long sides and cannot split into two arcs on a wide composer. The glow strength follows the hover state, honours reduce-motion, and stops its per-frame follow work as soon as the pointer leaves. The workspace-picker placeholder is left alone: the dashed outline is the host's own affordance.
 - Tooltips and session / workspace hover cards are themed glass layers, so they no longer show up as dark slabs in the light theme.
 - Dropdown menus (the command menu, the model menu and other menu surfaces) use the same frosted glass: a neutral, semi-transparent fill with a real backdrop blur, a diagonal sheen and a 1px inner edge.
 - Respects the system reduce-motion setting, including changes while the page is open.
@@ -25,8 +26,8 @@ An aurora and whale glassmorphism background theme for the DeepSeek Harness web 
 Designed for DeepSeek Harness 0.2.x. Clone the repository and run the following from its root:
 
 ```powershell
-git clone https://github.com/li-zheng-prog/whalefall.git
-cd whalefall
+git clone https://github.com/li-zheng-prog/dsh-plugin-whalefall.git
+cd dsh-plugin-whalefall
 dsh plugin --profile desktop add .
 ```
 

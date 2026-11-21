@@ -110,6 +110,14 @@ function environment({ reduced = false, dark = false, coarse = false, search = '
       },
       appendChild(child) { this.children.push(child); child.parentNode = this; return child; },
       removeChild(child) { this.children = this.children.filter(x => x !== child); child.parentNode = null; },
+      closest(selector) {
+        let node = el;
+        while (node) {
+          if (selector === '[data-composer-card]' && node.hasAttribute('data-composer-card')) return node;
+          node = node.parentNode;
+        }
+        return null;
+      },
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 90, height: 90, bottom: 90 }),
       getContext(type, options) {
         if (type === 'webgl2' && !webglAvailable) return null;
@@ -428,3 +436,139 @@ test('missing WebGL still leaves the light background and cleanup working', () =
   e.window.__dshDeepSeekBgHandle.dispose();
   assert.equal(e.frames.size + e.intervals.size, 0);
 });
+
+test('composer glow sticks to the nearest edge and writes the spot position', () => {
+  const e = environment(); e.plugin.apply();
+  e.frame();
+  const baseline = e.frames.size;
+  const card = e.document.createElement('div');
+  card.setAttribute('data-composer-card', '');
+  e.body.appendChild(card);
+  assert.equal(e.document.listenerCount('pointermove'), 1);
+
+  // 卡片 rect 固定为 (0, 0, 90, 90)：指针在正右方 → 光斑落在右边中点
+  e.document.emit('pointermove', { target: card, clientX: 135, clientY: 45 });
+  assert.equal(e.frames.size, baseline + 1);
+  e.frame();
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '90.0px');
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-y'), '45.0px');
+  assert.equal(e.frames.size, baseline);
+
+  // 左上方：最近的边是左边，光斑贴左边，纵向跟着指针走
+  e.document.emit('pointermove', { target: card, clientX: 20, clientY: 30 });
+  e.frame();
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '0.0px');
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-y'), '30.0px');
+
+  // 指针移出卡片：保持最后位置，不再排帧
+  e.document.emit('pointermove', { target: e.body, clientX: 200, clientY: 200 });
+  assert.equal(e.frames.size, baseline);
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '0.0px');
+
+  e.window.__dshDeepSeekBgHandle.dispose();
+  assert.equal(e.document.listenerCount('pointermove'), 0);
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '');
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-y'), '');
+});
+
+test('reduced motion writes the spot position without a follow loop', () => {
+  const e = environment({ reduced: true }); e.plugin.apply();
+  assert.equal(e.frames.size, 0);
+  const card = e.document.createElement('div');
+  card.setAttribute('data-composer-card', '');
+  e.body.appendChild(card);
+  // 正上方：贴顶边，x 跟着指针
+  e.document.emit('pointermove', { target: card, clientX: 45, clientY: -45 });
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '45.0px');
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-y'), '0.0px');
+  // 正下方：贴底边
+  e.document.emit('pointermove', { target: card, clientX: 45, clientY: 135 });
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '45.0px');
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-y'), '90.0px');
+  assert.equal(e.frames.size, 0);
+  e.window.__dshDeepSeekBgHandle.dispose();
+  assert.equal(e.document.listenerCount('pointermove'), 0);
+  assert.equal(card.style.getPropertyValue('--dsbg-flow-x'), '');
+});
+
+test('composer glow tracks child targets and clears the old card on switch', () => {
+  const e = environment(); e.plugin.apply();
+  e.frame();
+  const baseline = e.frames.size;
+  const first = e.document.createElement('div');
+  const second = e.document.createElement('div');
+  first.setAttribute('data-composer-card', '');
+  second.setAttribute('data-composer-card', '');
+  e.body.appendChild(first);
+  e.body.appendChild(second);
+  const button = e.document.createElement('button');
+  first.appendChild(button);
+
+  // 指针命中的是卡片里的子控件，位置仍然写给卡片
+  e.document.emit('pointermove', { target: button, clientX: 135, clientY: 45 });
+  e.frame();
+  assert.equal(first.style.getPropertyValue('--dsbg-flow-x'), '90.0px');
+  assert.equal(second.style.getPropertyValue('--dsbg-flow-x'), '');
+
+  // 切到另一张卡：旧卡的变量立刻清掉，新卡下一帧写自己的位置
+  e.document.emit('pointermove', { target: second, clientX: 10, clientY: 45 });
+  assert.equal(first.style.getPropertyValue('--dsbg-flow-x'), '');
+  e.frame();
+  assert.equal(second.style.getPropertyValue('--dsbg-flow-x'), '0.0px');
+  assert.equal(second.style.getPropertyValue('--dsbg-flow-y'), '45.0px');
+
+  // 指针离开：不再排帧，位置停在最后写入值
+  e.document.emit('pointermove', { target: e.body, clientX: 200, clientY: 200 });
+  assert.equal(e.frames.size, baseline);
+  assert.equal(second.style.getPropertyValue('--dsbg-flow-x'), '0.0px');
+
+  e.window.__dshDeepSeekBgHandle.dispose();
+  assert.equal(first.style.getPropertyValue('--dsbg-flow-x'), '');
+  assert.equal(second.style.getPropertyValue('--dsbg-flow-y'), '');
+  assert.equal(e.document.listenerCount('pointermove'), 0);
+});
+
+test('composer glow styles stay registered, masked, theme-tokened and motion-aware', () => {
+  const composer = source.slice(source.indexOf('输入框卡片：蓝色流光描边'), source.indexOf('聊天内容玻璃'));
+  assert.match(source, /@property --dsbg-flow-x \{\s*syntax: "<length>";\s*inherits: true;\s*initial-value: 0px;/);
+  assert.match(source, /@property --dsbg-flow-y \{\s*syntax: "<length>";/);
+  assert.match(source, /@property --dsbg-flow-heat \{\s*syntax: "<number>";/);
+  assert.match(source, /@property --dsbg-flow-halo \{\s*syntax: "<number>";\s*inherits: true;\s*initial-value: 1;/);
+  assert.match(composer, /background-image: radial-gradient\(circle 440px at var\(--dsbg-flow-x\) var\(--dsbg-flow-y\),/);
+  // mask 简写会把 composite 重置成 add，exclude 必须写在简写之后，顺序不能反
+  assert.match(source, /-webkit-mask: linear-gradient\(#000 0 0\) content-box, linear-gradient\(#000 0 0\);\s*-webkit-mask-composite: xor;\s*mask: linear-gradient\(#000 0 0\) content-box, linear-gradient\(#000 0 0\);\s*mask-composite: exclude;/);
+  // 呼吸由卡片上的 halo 驱动：描边亮度 + 外发光阴影读同一个值
+  assert.match(source, /animation: dsbg-composer-halo 2\.5s steps\(60, end\) infinite alternate;/);
+  assert.match(source, /@keyframes dsbg-composer-halo \{\s*from \{ --dsbg-flow-halo: 1; \}\s*to \{ --dsbg-flow-halo: 0; \}/);
+  assert.match(source, /inset 0 0 var\(--dsbg-flow-inner-blur\) rgb\(var\(--dsbg-flow-glow\) \/ calc\(var\(--dsbg-flow-inner\) \* \(0\.26 \+ 0\.74 \* var\(--dsbg-flow-halo\)\)\)\)/);
+  assert.match(source, /0 0 var\(--dsbg-flow-outer-blur\) rgb\(var\(--dsbg-flow-glow\) \/ calc\(var\(--dsbg-flow-outer\) \* \(0\.26 \+ 0\.74 \* var\(--dsbg-flow-halo\)\)\)\)/);
+  assert.match(composer, /background-color: rgb\(var\(--dsbg-flow-line\) \/ calc\(var\(--dsbg-flow-ring\) \* \(0\.55 \+ 0\.45 \* var\(--dsbg-flow-halo\)\)\)\);/);
+  // 浅色/深色峰值一致：描边 0.80、外发光 0.75、内晕 0.36；浅色去掉外侧白环
+  assert.match(source, /--dsbg-flow-ring: 0\.80;/);
+  assert.match(source, /--dsbg-flow-outer: 0\.75;/);
+  assert.match(source, /--dsbg-flow-inner: 0\.36;/);
+  assert.match(source, /--dsbg-composer-ring: transparent;/);
+  // 浅色光晕更薄，深色保持铺开
+  assert.match(source, /--dsbg-flow-outer-blur: 10px;/);
+  assert.match(source, /--dsbg-flow-inner-blur: 15px;/);
+  assert.match(source, /--dsbg-flow-outer-blur: 22px;/);
+  assert.match(source, /--dsbg-flow-inner-blur: 30px;/);
+  assert.match(composer, /transition: --dsbg-flow-heat 200ms ease;/);
+  // 悬停：卡片停呼吸（halo 回到 1），伪元素只点亮指针光斑
+  assert.ok(source.includes('[data-composer-card]:hover {\n    animation: none;\n  }'));
+  assert.match(composer, /\[data-composer-card\]:not\(\[class\*="cardWorkspaceTrigger"\]\):hover::after \{\s*--dsbg-flow-heat: 1;\s*\}/);
+  assert.doesNotMatch(source, /dsbg-composer-breathe/);
+  assert.doesNotMatch(composer, /--dsbg-flow-aim/);
+  assert.doesNotMatch(composer, /calc\([^)]*calc\(/);
+  // 单点光斑：只有径向渐变，没有按角度铺开的 conic；每个色标都乘 heat
+  assert.doesNotMatch(composer, /conic-gradient\(/);
+  const spot = composer.slice(composer.indexOf('radial-gradient('), composer.indexOf('-webkit-mask:'));
+  assert.equal((spot.match(/var\(--dsbg-flow-heat\)/g) || []).length, 4);
+  assert.doesNotMatch(composer, /--dsbg-flow-spin/);
+  assert.doesNotMatch(composer, /dsbg-composer-flow /);
+  assert.ok(source.includes('@media (prefers-reduced-motion: reduce) {\n  [data-composer-card] {\n    animation: none;\n    transition: none;\n  }'));
+  assert.match(source, /--dsbg-flow-line: 90 175 255;/);
+  assert.match(source, /--dsbg-flow-line: 103 158 254;/);
+  assert.match(source, /\[data-composer-card\]\[class\*="cardWorkspaceTrigger"\] \{[\s\S]*?animation: none;/);
+});
+
