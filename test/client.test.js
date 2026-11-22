@@ -529,7 +529,7 @@ test('composer glow tracks child targets and clears the old card on switch', () 
 });
 
 test('composer glow styles stay registered, masked, theme-tokened and motion-aware', () => {
-  const composer = source.slice(source.indexOf('输入框卡片：蓝色流光描边'), source.indexOf('聊天内容玻璃'));
+  const composer = source.slice(source.indexOf('输入框卡片：深色流光描边'), source.indexOf('聊天内容玻璃'));
   assert.match(source, /@property --dsbg-flow-x \{\s*syntax: "<length>";\s*inherits: true;\s*initial-value: 0px;/);
   assert.match(source, /@property --dsbg-flow-y \{\s*syntax: "<length>";/);
   assert.match(source, /@property --dsbg-flow-heat \{\s*syntax: "<number>";/);
@@ -537,18 +537,32 @@ test('composer glow styles stay registered, masked, theme-tokened and motion-awa
   assert.match(composer, /background-image: radial-gradient\(circle 440px at var\(--dsbg-flow-x\) var\(--dsbg-flow-y\),/);
   // mask 简写会把 composite 重置成 add，exclude 必须写在简写之后，顺序不能反
   assert.match(source, /-webkit-mask: linear-gradient\(#000 0 0\) content-box, linear-gradient\(#000 0 0\);\s*-webkit-mask-composite: xor;\s*mask: linear-gradient\(#000 0 0\) content-box, linear-gradient\(#000 0 0\);\s*mask-composite: exclude;/);
-  // 呼吸由卡片上的 halo 驱动：描边亮度 + 外发光阴影读同一个值
+  // 呼吸由卡片上的 halo 驱动：描边亮度 + 外发光阴影读同一个值（浅色不跑这个动画）
   assert.match(source, /animation: dsbg-composer-halo 2\.5s steps\(60, end\) infinite alternate;/);
   assert.match(source, /@keyframes dsbg-composer-halo \{\s*from \{ --dsbg-flow-halo: 1; \}\s*to \{ --dsbg-flow-halo: 0; \}/);
   assert.match(source, /inset 0 0 var\(--dsbg-flow-inner-blur\) rgb\(var\(--dsbg-flow-glow\) \/ calc\(var\(--dsbg-flow-inner\) \* \(0\.26 \+ 0\.74 \* var\(--dsbg-flow-halo\)\)\)\)/);
   assert.match(source, /0 0 var\(--dsbg-flow-outer-blur\) rgb\(var\(--dsbg-flow-glow\) \/ calc\(var\(--dsbg-flow-outer\) \* \(0\.26 \+ 0\.74 \* var\(--dsbg-flow-halo\)\)\)\)/);
   assert.match(composer, /background-color: rgb\(var\(--dsbg-flow-line\) \/ calc\(var\(--dsbg-flow-ring\) \* \(0\.55 \+ 0\.45 \* var\(--dsbg-flow-halo\)\)\)\);/);
-  // 浅色/深色峰值一致：描边 0.80、外发光 0.75、内晕 0.36；浅色去掉外侧白环
+  // 浅色只剩 1px 淡边：描边/内晕/外发光强度归零，投影置空，不呼吸也没有描边光斑
+  assert.match(source, /--dsbg-composer-border: rgba\(65, 100, 148, 0\.16\);/);
+  assert.match(source, /--dsbg-composer-highlight: transparent;/);
+  assert.match(source, /--dsbg-composer-fill: linear-gradient\(172deg,\s*rgba\(255, 255, 255, 0\.97\) 0%, rgba\(250, 251, 255, 0\.95\) 34%,\s*rgba\(245, 248, 255, 0\.94\) 68%, rgba\(240, 244, 255, 0\.93\) 100%\);/);
+  assert.match(source, /background: var\(--dsbg-composer-fill\) !important;/);
+  assert.match(source, /--dsbg-composer-ambient: 0 0 0 0 transparent;/);
+  assert.match(source, /--dsbg-flow-ring: 0;\n  --dsbg-flow-inner: 0;\n  --dsbg-flow-outer: 0;/);
+  assert.ok(source.includes('body:not([data-ds-dark-theme]) [data-composer-card] {\n  animation: none;\n}'));
+  assert.ok(source.includes('body:not([data-ds-dark-theme]) [data-composer-card]:not([class*="cardWorkspaceTrigger"])::after {\n  display: none;\n}'));
+  assert.ok(source.includes('body:not([data-ds-dark-theme]) [data-composer-card]::before {\n  display: none;\n}'));
+  // 深色保持原来的匀色呼吸描边、蓝色光晕和玻璃投影
   assert.match(source, /--dsbg-flow-ring: 0\.80;/);
   assert.match(source, /--dsbg-flow-outer: 0\.75;/);
   assert.match(source, /--dsbg-flow-inner: 0\.36;/);
+  assert.match(source, /--dsbg-composer-fill: rgba\(13, 15, 19, 0\.55\);/);
+  assert.match(source, /--dsbg-composer-ambient: 0 0 1px 0 rgba\(0, 0, 0, 0\.2\),/);
   assert.match(source, /--dsbg-composer-ring: transparent;/);
-  // 浅色光晕更薄，深色保持铺开
+  assert.doesNotMatch(source, /--dsbg-composer-edge/);
+  assert.doesNotMatch(source, /--dsbg-bloom/);
+  // 深色光晕铺开；浅色的模糊值保留是为了 box-shadow 里的 var() 仍然有效
   assert.match(source, /--dsbg-flow-outer-blur: 10px;/);
   assert.match(source, /--dsbg-flow-inner-blur: 15px;/);
   assert.match(source, /--dsbg-flow-outer-blur: 22px;/);
